@@ -7,19 +7,26 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Deploy via SSH Key
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ssh.hntuan7684.id.vn
-          username: tuanh
-          key: ${{ secrets.SERVER_KEY }}
-          port: 22
-          timeout: 60s
-          command_timeout: 20m
-          script: |
-            cd D:/Code/final
-            git pull origin main
-            docker-compose up -d --build
-            echo "Deploy completed!"
+      - name: Setup SSH with Cloudflare
+        run: |
+          # Cài cloudflared
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared && sudo mv cloudflared /usr/local/bin/
+
+          # Tạo SSH key file
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          # Cấu hình SSH dùng cloudflared làm proxy
+          cat >> ~/.ssh/config << 'EOF'
+          Host ssh.hntuan7684.id.vn
+            ProxyCommand cloudflared access ssh --hostname %h
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/id_ed25519 tuanh@ssh.hntuan7684.id.vn "cd D:/Code/final && git pull origin main && docker-compose up -d --build && echo Deploy completed!"
