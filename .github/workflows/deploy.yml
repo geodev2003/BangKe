@@ -11,4 +11,5 @@ jobs:
       - name: Pull & rebuild
         shell: cmd
         run: |
+          git config --global --add safe.directory D:/Code/final
           cd /d D:\Code\final && git pull origin main && docker-compose up -d --build && echo Deploy completed!
