@@ -27,16 +27,17 @@ function Toast({toasts}) {
   )
 }
 
+const navs = [
+  {id:'dashboard', label:'Tổng quan',         icon:'📊'},
+  {id:'upload',    label:'Nhập Excel',          icon:'📤'},
+  {id:'bills',     label:'Danh sách bảng kê',   icon:'📋'},
+  {id:'packages',  label:'Gói khám',            icon:'📦'},
+  {id:'patients',  label:'Bệnh nhân',           icon:'👥'},
+  {id:'services',  label:'Quản lý dịch vụ',    icon:'🗂️'},
+  {id:'templates', label:'Mẫu in',               icon:'🖨️'},
+]
+
 function Sidebar({page,setPage}) {
-  const navs = [
-    {id:'dashboard', label:'Tổng quan',         icon:'📊'},
-    {id:'upload',    label:'Nhập Excel',          icon:'📤'},
-    {id:'bills',     label:'Danh sách bảng kê',   icon:'📋'},
-    {id:'packages',  label:'Gói khám',            icon:'📦'},
-    {id:'patients',  label:'Bệnh nhân',           icon:'👥'},
-    {id:'services',  label:'Quản lý dịch vụ',    icon:'🗂️'},
-    {id:'templates', label:'Mẫu in',               icon:'🖨️'},
-  ]
   return (
     <div className="sidebar">
       <div className="sidebar-logo">
