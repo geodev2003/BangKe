@@ -1550,21 +1550,22 @@ function ServicesPage({toast}) {
         <div key={grp.id} className="service-group-card">
           <div className="service-group-header">
             <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
-              <span>{grp.name} <span style={{opacity:0.6,fontWeight:400,fontSize:12}}>({grp.services.length})</span></span>
-              <span style={{marginLeft:'auto',fontSize:10,opacity:0.5,fontWeight:400,display:'flex',gap:20,paddingRight:8}}>
-                <span style={{width:130,textAlign:'right'}}>Giá BV</span>
-                <span style={{width:130,textAlign:'right'}}>Giá BHYT</span>
+              <span style={{fontWeight:700,fontSize:13}}>{grp.name}
+                <span style={{opacity:0.6,fontWeight:400,fontSize:11,marginLeft:5}}>({grp.services.length})</span>
+              </span>
+              <span style={{marginLeft:'auto',fontSize:10,opacity:0.5,display:'flex',gap:8,paddingRight:4}}>
+                <span style={{width:100,textAlign:'right'}}>Giá BV</span>
+                <span style={{width:100,textAlign:'right'}}>Giá BHYT</span>
               </span>
             </div>
-            <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-              <button className="btn btn-xs" style={{background:'rgba(255,255,255,0.15)',color:'white',border:'none'}}
+            <div style={{display:'flex',gap:4,alignItems:'center',flexShrink:0}}>
+              <button className="btn btn-xs" style={{background:'rgba(255,255,255,0.15)',color:'white',border:'1px solid rgba(255,255,255,0.2)'}}
                 onClick={()=>{setShowAddSvc(grp.id);setNewSvc({name:'',unit:'Lần',price:'',bhyt_price:''})}}>
-                + Thêm DV
+                + Thêm
               </button>
-              <button className="btn btn-xs" title="Xóa nhóm"
-                style={{background:'rgba(192,57,43,0.7)',color:'white',border:'none'}}
+              <button className="btn btn-xs" style={{background:'rgba(192,57,43,0.8)',color:'white',border:'none'}}
                 onClick={()=>delGroup(grp.id)}>
-                🗑 Xóa nhóm
+                🗑
               </button>
             </div>
           </div>
