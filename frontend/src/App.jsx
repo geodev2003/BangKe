@@ -184,7 +184,7 @@ function UploadPage({toast,setPage}) {
       </div>
       {result&&<div className="card">
         <div className="card-header"><h3>✅ Kết quả</h3><button className="btn btn-teal btn-sm" onClick={()=>setPage('bills')}>Xem danh sách →</button></div>
-        <div style={{overflow:'auto'}}>
+        <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
           <table className="data-table">
             <thead><tr><th>Mã BN</th><th>Họ tên</th><th>Số DV khớp</th><th style={{textAlign:'right'}}>Tổng tiền (VNĐ)</th></tr></thead>
             <tbody>
@@ -1117,7 +1117,7 @@ function BillsPage({toast}) {
           </div>
         </div>
 
-        <div style={{overflow:'auto'}}>
+        <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
           <table className="data-table">
             <thead>
               <tr>
@@ -1314,7 +1314,7 @@ function PatientsPage({toast}) {
             <button className="btn btn-primary btn-sm" onClick={()=>setShowCreate(true)}>+ Thêm BN</button>
           </div>
         </div>
-        <div style={{overflow:'auto'}}>
+        <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
           <table className="data-table">
             <thead>
               <tr>
@@ -1664,14 +1664,52 @@ const PAGE_META = {
 }
 
 export default function App() {
-  const [page,setPage] = useState('dashboard')
+  const [page, setPage]           = useState('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const toast = useToast()
-  const meta = PAGE_META[page]
+  const meta  = PAGE_META[page]
+
+  const navigate = (p) => { setPage(p); setSidebarOpen(false) }
+
   return (
     <div className="app-layout">
-      <Sidebar page={page} setPage={setPage}/>
+      {/* Mobile overlay */}
+      <div className={`sidebar-overlay ${sidebarOpen?'open':''}`}
+        onClick={()=>setSidebarOpen(false)}/>
+
+      {/* Sidebar */}
+      <div className={`sidebar ${sidebarOpen?'open':''}`}>
+        <div className="sidebar-logo">
+          <div className="logo-icon">🏥</div>
+          <h1>Bệnh Viện Hồng Đức II</h1>
+          <p>Bảng kê chi phí</p>
+        </div>
+        <nav className="sidebar-nav">
+          {navs.map(nav=>(
+            <div key={nav.id}
+              className={`nav-item ${page===nav.id?'active':''}`}
+              onClick={()=>navigate(nav.id)}>
+              <span style={{fontSize:16}}>{nav.icon}</span>
+              <span>{nav.label}</span>
+            </div>
+          ))}
+        </nav>
+        <div style={{padding:'16px',borderTop:'1px solid rgba(255,255,255,0.1)',fontSize:11,color:'rgba(255,255,255,0.3)'}}>
+          v1.0 · Hồng Đức II
+        </div>
+      </div>
+
+      {/* Main */}
       <div className="main-content">
-        <div className="topbar"><div><h2>{meta.title}</h2><p>{meta.desc}</p></div></div>
+        <div className="topbar">
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <button className="mobile-menu-btn" onClick={()=>setSidebarOpen(v=>!v)}>☰</button>
+            <div>
+              <h2>{meta.title}</h2>
+              <p>{meta.desc}</p>
+            </div>
+          </div>
+        </div>
         <div className="page-content">
           {page==='dashboard'&&<Dashboard setPage={setPage}/>}
           {page==='upload'&&<UploadPage toast={toast} setPage={setPage}/>}
@@ -1686,6 +1724,7 @@ export default function App() {
     </div>
   )
 }
+
 
 /* ══════════════════════════════════════════════════════════════════
    GÓI KHÁM PAGE
