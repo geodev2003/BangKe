@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+dist/
+.npm/
+
+# Docker
+.env
+
+# Database data
+pgdata/
+
+# Templates meta (tự generate)
+templates/templates_meta.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
