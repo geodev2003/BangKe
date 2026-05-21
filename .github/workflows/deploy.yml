@@ -9,9 +9,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Pull & rebuild
-        shell: powershell
+        shell: cmd
         run: |
-          Set-Location "D:\Code\final"
-          git pull origin main
-          docker-compose up -d --build
-          Write-Host "Deploy completed!"
+          cd /d D:\Code\final && git pull origin main && docker-compose up -d --build && echo Deploy completed!
