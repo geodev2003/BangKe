@@ -49,7 +49,7 @@ class BillItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     bill_id = Column(Integer, ForeignKey("outpatient_bills.id"))
     service_id = Column(Integer, ForeignKey("services.id"), nullable=True)
-    so_luong = Column(Integer, default=1)
+    so_luong = Column(Float, default=1)    # Float để hỗ trợ số thập phân (0.1, 0.5...)
     don_gia_bv = Column(Float, default=0)
     don_gia_bh = Column(Float, default=0)        # Đơn giá BH (giá trần BHYT)
     ty_le_tt_dv = Column(Float, default=100)     # Tỷ lệ TT dịch vụ (%)
@@ -83,7 +83,7 @@ class PackageService(Base):
     id          = Column(Integer, primary_key=True, index=True)
     package_id  = Column(Integer, ForeignKey("exam_packages.id"))
     service_id  = Column(Integer, ForeignKey("services.id"))
-    so_luong    = Column(Integer, default=1)
+    so_luong    = Column(Float, default=1)   # Float để hỗ trợ số thập phân
     don_gia_bv  = Column(Float, nullable=True)   # None = dùng giá từ services
     don_gia_bh  = Column(Float, nullable=True)   # None = dùng bhyt_price từ services
     package     = relationship("ExamPackage", back_populates="package_services")

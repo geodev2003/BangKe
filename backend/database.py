@@ -30,6 +30,27 @@ def _migrate_services(engine):
             conn.execute(text('ALTER TABLE services ADD COLUMN bhyt_price FLOAT'))
             conn.commit()
 
+def _migrate_so_luong_float(engine):
+    """Đổi so_luong từ INTEGER sang REAL (Float) để hỗ trợ số thập phân."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    # PostgreSQL: ALTER COLUMN TYPE
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(
+                "ALTER TABLE bill_items ALTER COLUMN so_luong TYPE FLOAT USING so_luong::float"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        try:
+            conn.execute(text(
+                "ALTER TABLE package_services ALTER COLUMN so_luong TYPE FLOAT USING so_luong::float"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
 def _migrate_bill_items(engine):
     """Add BHYT columns to bill_items if they don't exist (safe migration)."""
     from sqlalchemy import text, inspect
@@ -92,6 +113,7 @@ def init_db():
     _migrate_services(engine)
     _migrate_bill_items(engine)
     _migrate_exam_packages(engine)
+    _migrate_so_luong_float(engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

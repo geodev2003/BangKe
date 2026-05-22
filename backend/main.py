@@ -84,10 +84,10 @@ class ServiceUpdate(BaseModel):
 
 class BillItemAdd(BaseModel):
     service_id: int
-    so_luong: int = 1
+    so_luong: float = 1
 
 class BillItemUpdate(BaseModel):
-    so_luong: Optional[int] = None
+    so_luong: Optional[float] = None
     don_gia_bv: Optional[float] = None
     don_gia_bh: Optional[float] = None
     ty_le_bhyt: Optional[float] = None   # mức hưởng BHYT %
@@ -900,12 +900,12 @@ class PackageUpdate(BaseModel):
 
 class PackageServiceAdd(BaseModel):
     service_id: int
-    so_luong: int = 1
+    so_luong: float = 1
     don_gia_bv: Optional[float] = None  # None = dùng giá từ danh mục
     don_gia_bh: Optional[float] = None
 
 class PackageServiceUpdate(BaseModel):
-    so_luong: Optional[int] = None
+    so_luong: Optional[float] = None
     don_gia_bv: Optional[float] = None
     don_gia_bh: Optional[float] = None
 

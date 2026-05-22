@@ -6,10 +6,20 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Pull & rebuild
-        shell: cmd
-        run: |
-          git config --global --add safe.directory D:/Code/final
-          cd /d D:\Code\final && git pull origin main && docker-compose up -d --build && echo Deploy completed!
+      - name: Deploy via SSH Key
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ssh.hntuan7684.id.vn
+          username: tuanh
+          key: ${{ secrets.SERVER_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 20m
+          script: |
+            cd D:/Code/final
+            git pull origin main
+            docker-compose up -d --build
+            echo "Deploy completed!"
