@@ -372,7 +372,7 @@ function BhytTab({bill, bhytForm, setBhytForm, saveBhyt, removeBhyt, bhytSaving,
                         {!item.quy_bhyt && <span style={{fontSize:10,background:'var(--border)',borderRadius:3,padding:'1px 5px',marginRight:5,color:'var(--text-light)'}}>Không BH</span>}
                         {item.name}
                       </td>
-                      <td className="center">{item.so_luong}</td>
+                      <td className="center">{fmtSL(item.so_luong)}</td>
                       <td className="num">{fmt(item.don_gia_bv)}</td>
                       <td className="num">{fmt(item.don_gia_bh)||'—'}</td>
                       <td className="num">{fmt(item.thanh_tien_bv)}</td>
@@ -655,7 +655,7 @@ function BillDetailModal({billId, onClose, toast}) {
     setSaving(true)
     try{
       const res = await axios.put(`${API}/bills/${billId}/items/${editItem.id}`,{
-        so_luong:parseInt(editItem.so_luong),
+        so_luong:parseFloat(editItem.so_luong)||1,
         don_gia_bv:parseFloat(editItem.don_gia_bv),
       })
       setBill(res.data); setEditItem(null)
@@ -819,7 +819,7 @@ function BillDetailModal({billId, onClose, toast}) {
                   </div>
                   <div style={{width:80}}>
                     <div className="form-label">Số lượng</div>
-                    <input className="form-input" type="number" min="1" value={addQty} onChange={e=>setAddQty(parseInt(e.target.value)||1)}/>
+                    <input className="form-input" type="number" min="0.001" step="0.1" value={addQty} onChange={e=>setAddQty(parseFloat(e.target.value)||1)}/>
                   </div>
                   <div style={{display:'flex',gap:6}}>
                     <button className="btn btn-teal btn-sm" onClick={addItem} disabled={saving}>{saving?'⏳':'✓'} Thêm</button>
@@ -857,7 +857,7 @@ function BillDetailModal({billId, onClose, toast}) {
                               <td className="center">{item.unit}</td>
                               <td>
                                 <input style={{width:46,padding:'2px 4px',border:'1px solid var(--teal)',borderRadius:4,textAlign:'center',fontSize:12}}
-                                  type="number" min="1" value={editItem.so_luong}
+                                  type="number" min="0.001" step="0.1" value={editItem.so_luong}
                                   onChange={e=>setEditItem({...editItem,so_luong:e.target.value})}/>
                               </td>
                               <td>
@@ -879,7 +879,7 @@ function BillDetailModal({billId, onClose, toast}) {
                           : <tr key={item.id}>
                               <td style={{fontSize:12}}>{item.name}</td>
                               <td className="center" style={{fontSize:12}}>{item.unit}</td>
-                              <td className="center">{item.so_luong}</td>
+                              <td className="center">{fmtSL(item.so_luong)}</td>
                               <td className="num">{fmt(item.don_gia_bv)}</td>
                               <td className="center" style={{color:'var(--text-light)'}}>0</td>
                               <td className="center">100</td>
@@ -1987,9 +1987,9 @@ function PackageDetailModal({pkgId, onClose, toast}) {
                     <span style={{flex:1,fontSize:12}}>{ps.name}</span>
                     <div style={{display:'flex',gap:6,alignItems:'center'}}>
                       <div><div style={{fontSize:10,color:'var(--text-light)'}}>SL</div>
-                        <input style={{width:50,padding:'3px 5px',fontSize:12,border:'1px solid var(--teal)',borderRadius:4}}
-                          type="number" min="1" value={editSvcVals.so_luong||ps.so_luong}
-                          onChange={e=>setEditSvcVals(v=>({...v,so_luong:parseInt(e.target.value)||1}))}/></div>
+                        <input style={{width:60,padding:'3px 5px',fontSize:12,border:'1px solid var(--teal)',borderRadius:4}}
+                          type="number" min="0.001" step="0.1" value={editSvcVals.so_luong||ps.so_luong}
+                          onChange={e=>setEditSvcVals(v=>({...v,so_luong:parseFloat(e.target.value)||1}))}/></div>
                       <div><div style={{fontSize:10,color:'var(--text-light)'}}>Giá BV</div>
                         <input style={{width:90,padding:'3px 5px',fontSize:12,border:'1px solid var(--teal)',borderRadius:4}}
                           type="number" value={editSvcVals.don_gia_bv??ps.don_gia_bv??''}
@@ -2009,7 +2009,7 @@ function PackageDetailModal({pkgId, onClose, toast}) {
                       <div style={{fontSize:12,color:'var(--text)'}}>{ps.name}</div>
                       <div style={{fontSize:11,color:'var(--text-light)',marginTop:1}}>{ps.group_name}</div>
                     </div>
-                    <span style={{fontSize:11,background:'var(--cream)',borderRadius:4,padding:'2px 6px'}}>{ps.so_luong}x</span>
+                    <span style={{fontSize:11,background:'var(--cream)',borderRadius:4,padding:'2px 6px'}}>{fmtSL(ps.so_luong)}x</span>
                     <span style={{fontSize:12,fontWeight:600,color:'var(--navy)',fontFamily:'JetBrains Mono,monospace',width:90,textAlign:'right'}}>{fmt(ps.don_gia_bv)} đ</span>
                     {ps.don_gia_bh?<span style={{fontSize:11,color:'var(--gold)',width:85,textAlign:'right'}}>BH:{fmt(ps.don_gia_bh)}</span>
                       :<span style={{width:85}}/>}

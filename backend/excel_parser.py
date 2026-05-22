@@ -64,7 +64,9 @@ def parse_excel(file_path: str) -> List[Dict[str, Any]]:
                 if svc_name and str(svc_name).strip():
                     val = row[j] if j < len(row) else None
                     try:
-                        qty = int(val) if val else 0
+                        qty = float(val) if val else 0
+                        # Làm gọn số nguyên (1.0 -> 1)
+                        if qty == int(qty): qty = int(qty)
                     except (ValueError, TypeError):
                         qty = 1 if val else 0
                     if qty > 0:
