@@ -4,6 +4,12 @@ import axios from 'axios'
 const API = '/api'
 const fmt  = v => v ? new Intl.NumberFormat('vi-VN').format(v) : '0'
 const fmt2 = v => v ? new Intl.NumberFormat('vi-VN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v) : ''
+const fmtSL = v => {
+  if (v == null) return ''
+  const n = parseFloat(v)
+  if (Number.isInteger(n)) return n.toString()
+  return n.toLocaleString('vi-VN', {maximumFractionDigits:3})
+}
 
 function useToast() {
   const [toasts, setToasts] = useState([])
