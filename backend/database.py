@@ -156,7 +156,7 @@ def _migrate_auth(engine):
         if result.fetchone() is None:
             pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
             admin_pass = os.getenv("ADMIN_PASSWORD", "Admin@123456")
-            hashed = pwd_ctx.hash(admin_pass)
+            hashed = pwd_ctx.hash(admin_pass[:72])  # bcrypt max 72 bytes
             conn.execute(text(
                 "INSERT INTO users (username, email, full_name, hashed_pw, role) "
                 "VALUES ('admin', 'admin@hongduc2.vn', 'Quản trị viên', :pw, 'admin')"
