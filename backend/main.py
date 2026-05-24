@@ -1696,6 +1696,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from models import User, ActivityLog
 from datetime import timedelta
 
+from datetime import datetime, timedelta as _timedelta_auth
 SECRET_KEY = os.getenv("JWT_SECRET", "hongduc2-super-secret-key-2026")
 ALGORITHM  = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 giờ
@@ -1717,7 +1718,7 @@ def hash_password(pw):
 
 def create_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.utcnow() + (expires_delta or _timedelta_auth(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode["exp"] = expire
     return _jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
