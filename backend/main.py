@@ -1704,8 +1704,16 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def verify_password(plain, hashed): return pwd_ctx.verify(plain[:72], hashed)
-def hash_password(pw): return pwd_ctx.hash(pw[:72])  # bcrypt max 72 bytes
+def verify_password(plain, hashed):
+    import bcrypt as _bcrypt_lib
+    try:
+        return _bcrypt_lib.checkpw(plain.encode()[:72], hashed.encode())
+    except Exception:
+        return False
+
+def hash_password(pw):
+    import bcrypt as _bcrypt_lib
+    return _bcrypt_lib.hashpw(pw.encode()[:72], _bcrypt_lib.gensalt()).decode()
 
 def create_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()

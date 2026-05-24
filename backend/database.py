@@ -154,9 +154,9 @@ def _migrate_auth(engine):
         # Seed admin user nếu chưa có
         result = conn.execute(text("SELECT id FROM users WHERE username='admin'"))
         if result.fetchone() is None:
-            pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            import bcrypt as _bcrypt_lib
             admin_pass = os.getenv("ADMIN_PASSWORD", "Admin@123456")
-            hashed = pwd_ctx.hash(admin_pass[:72])  # bcrypt max 72 bytes
+            hashed = _bcrypt_lib.hashpw(admin_pass.encode()[:72], _bcrypt_lib.gensalt()).decode()
             conn.execute(text(
                 "INSERT INTO users (username, email, full_name, hashed_pw, role) "
                 "VALUES ('admin', 'admin@hongduc2.vn', 'Quản trị viên', :pw, 'admin')"
