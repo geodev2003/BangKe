@@ -109,11 +109,67 @@ def _migrate_exam_packages(engine):
                 )"""))
         conn.commit()
 
+def _migrate_auth(engine):
+    """Create users and activity_logs tables, seed admin user."""
+    from sqlalchemy import text, inspect
+    from passlib.context import CryptContext
+    import os
+
+    insp = inspect(engine)
+    existing = set(insp.get_table_names())
+
+    with engine.connect() as conn:
+        if 'users' not in existing:
+            conn.execute(text("""
+                CREATE TABLE users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(100) UNIQUE NOT NULL,
+                    email VARCHAR(200) UNIQUE,
+                    full_name VARCHAR(200),
+                    hashed_pw VARCHAR(500) NOT NULL,
+                    role VARCHAR(20) DEFAULT 'user',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    last_login TIMESTAMP
+                )"""))
+
+        if 'activity_logs' not in existing:
+            conn.execute(text("""
+                CREATE TABLE activity_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    username VARCHAR(100),
+                    action VARCHAR(100) NOT NULL,
+                    resource VARCHAR(100),
+                    resource_id VARCHAR(50),
+                    detail VARCHAR(500),
+                    ip_address VARCHAR(50),
+                    user_agent VARCHAR(300),
+                    status VARCHAR(20) DEFAULT 'success',
+                    created_at TIMESTAMP DEFAULT NOW()
+                )"""))
+
+        conn.commit()
+
+        # Seed admin user nếu chưa có
+        result = conn.execute(text("SELECT id FROM users WHERE username='admin'"))
+        if result.fetchone() is None:
+            pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            admin_pass = os.getenv("ADMIN_PASSWORD", "Admin@123456")
+            hashed = pwd_ctx.hash(admin_pass)
+            conn.execute(text(
+                "INSERT INTO users (username, email, full_name, hashed_pw, role) "
+                "VALUES ('admin', 'admin@hongduc2.vn', 'Quản trị viên', :pw, 'admin')"
+            ), {"pw": hashed})
+            conn.commit()
+            print(f"[DB] Admin user created. Password: {admin_pass}")
+
 def init_db():
     _migrate_services(engine)
     _migrate_bill_items(engine)
     _migrate_exam_packages(engine)
     _migrate_so_luong_float(engine)
+    _migrate_auth(engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

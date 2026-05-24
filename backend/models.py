@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -101,3 +101,34 @@ class PackagePatient(Base):
     package     = relationship("ExamPackage", back_populates="package_patients")
     patient     = relationship("Patient")
     bill        = relationship("OutpatientBill")
+
+
+# ── Auth & Logging ────────────────────────────────────────────────────────────
+class User(Base):
+    __tablename__ = "users"
+    id         = Column(Integer, primary_key=True, index=True)
+    username   = Column(String(100), unique=True, nullable=False)
+    email      = Column(String(200), unique=True, nullable=True)
+    full_name  = Column(String(200), nullable=True)
+    hashed_pw  = Column(String(500), nullable=False)
+    role       = Column(String(20), default="user")   # "admin" | "user"
+    is_active  = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+    logs       = relationship("ActivityLog", back_populates="user",
+                              cascade="all, delete-orphan")
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+    id          = Column(Integer, primary_key=True, index=True)
+    user_id     = Column(Integer, ForeignKey("users.id"), nullable=True)
+    username    = Column(String(100), nullable=True)  # lưu cả username để không mất khi xóa user
+    action      = Column(String(100), nullable=False)  # LOGIN, LOGOUT, CREATE_BILL...
+    resource    = Column(String(100), nullable=True)   # bills, patients, services...
+    resource_id = Column(String(50),  nullable=True)
+    detail      = Column(String(500), nullable=True)   # mô tả chi tiết
+    ip_address  = Column(String(50),  nullable=True)
+    user_agent  = Column(String(300), nullable=True)
+    status      = Column(String(20),  default="success")  # success | error
+    created_at  = Column(DateTime, default=datetime.utcnow)
+    user        = relationship("User", back_populates="logs")

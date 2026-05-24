@@ -42,6 +42,10 @@ const navs = [
   {id:'services',  label:'Quản lý dịch vụ',    icon:'🗂️'},
   {id:'templates', label:'Mẫu in',               icon:'🖨️'},
 ]
+const adminNavs = [
+  {id:'users',     label:'Quản lý người dùng', icon:'👤'},
+  {id:'logs',      label:'Nhật ký hoạt động',  icon:'📜'},
+]
 
 function Sidebar({page,setPage}) {
   return (
@@ -1669,15 +1673,52 @@ const PAGE_META = {
   patients: {title:'Bệnh nhân',          desc:'Danh sách bệnh nhân đã đăng ký'},
   services:  {title:'Quản lý dịch vụ',   desc:'Cấu hình danh mục dịch vụ và đơn giá'},
   templates: {title:'Mẫu in',              desc:'Quản lý các mẫu Word để xuất bảng kê'},
+  users:     {title:'Quản lý người dùng', desc:'Tạo tài khoản, phân quyền, theo dõi người dùng'},
+  logs:      {title:'Nhật ký hoạt động',  desc:'Theo dõi toàn bộ thao tác trong hệ thống'},
 }
 
 export default function App() {
-  const [page, setPage]           = useState('dashboard')
+  const [page, setPage]               = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [user, setUser]               = useState(null)   // logged-in user
+  const [authChecked, setAuthChecked] = useState(false)  // đã check auth chưa
   const toast = useToast()
-  const meta  = PAGE_META[page]
+  const meta  = PAGE_META[page] || PAGE_META['dashboard']
+
+  // Check auth on mount
+  useEffect(()=>{
+    const token = localStorage.getItem('access_token')
+    if(!token){ setAuthChecked(true); return }
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    axios.get(`${API}/auth/me`)
+      .then(r=>{ setUser(r.data); setAuthChecked(true) })
+      .catch(()=>{ localStorage.removeItem('access_token'); setAuthChecked(true) })
+  },[])
+
+  const handleLogin = (userData, token) => {
+    localStorage.setItem('access_token', token)
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    setUser(userData)
+    toast.add(`Chào mừng, ${userData.full_name || userData.username}!`)
+  }
+
+  const handleLogout = async() => {
+    await axios.post(`${API}/auth/logout`).catch(()=>{})
+    localStorage.removeItem('access_token')
+    delete axios.defaults.headers.common['Authorization']
+    setUser(null)
+    toast.add('Đã đăng xuất')
+  }
 
   const navigate = (p) => { setPage(p); setSidebarOpen(false) }
+
+  if(!authChecked) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--navy)'}}>
+      <div style={{color:'white',fontSize:18}}>⏳ Đang tải...</div>
+    </div>
+  )
+
+  if(!user) return <LoginPage onLogin={handleLogin} toast={toast}/>
 
   return (
     <div className="app-layout">
@@ -1701,6 +1742,19 @@ export default function App() {
               <span>{nav.label}</span>
             </div>
           ))}
+          {user?.role==='admin'&&<>
+            <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',padding:'10px 10px 4px',textTransform:'uppercase',letterSpacing:'0.08em'}}>
+              Quản trị
+            </div>
+            {adminNavs.map(nav=>(
+              <div key={nav.id}
+                className={`nav-item ${page===nav.id?'active':''}`}
+                onClick={()=>navigate(nav.id)}>
+                <span style={{fontSize:16}}>{nav.icon}</span>
+                <span>{nav.label}</span>
+              </div>
+            ))}
+          </>}
         </nav>
         <div style={{padding:'16px',borderTop:'1px solid rgba(255,255,255,0.1)',fontSize:11,color:'rgba(255,255,255,0.3)'}}>
           v1.0 · Hồng Đức II
@@ -1717,6 +1771,21 @@ export default function App() {
               <p>{meta.desc}</p>
             </div>
           </div>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{textAlign:'right',display:'none'}} className="topbar-user">
+              <div style={{fontSize:12,fontWeight:700,color:'var(--navy)'}}>{user?.full_name||user?.username}</div>
+              <div style={{fontSize:10,color:'var(--text-light)',textTransform:'uppercase'}}>{user?.role}</div>
+            </div>
+            <div style={{
+              width:32,height:32,borderRadius:'50%',
+              background:'var(--teal)',color:'white',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0,
+            }} title={user?.username}>
+              {(user?.full_name||user?.username||'?')[0].toUpperCase()}
+            </div>
+            <button className="btn btn-outline btn-xs" onClick={handleLogout} title="Đăng xuất">⬡ Thoát</button>
+          </div>
         </div>
         <div className="page-content">
           {page==='dashboard'&&<Dashboard setPage={setPage}/>}
@@ -1726,6 +1795,8 @@ export default function App() {
           {page==='patients'&&<PatientsPage toast={toast}/>}
           {page==='services'&&<ServicesPage toast={toast}/>}
           {page==='templates'&&<TemplatesPage toast={toast}/>}
+          {page==='users'&&user?.role==='admin'&&<UsersPage toast={toast}/>}
+          {page==='logs'&&user?.role==='admin'&&<LogsPage toast={toast}/>}
         </div>
       </div>
       <Toast toasts={toast.toasts}/>
@@ -2490,6 +2561,533 @@ function TemplatesPage({toast}) {
               <button className="btn btn-outline" onClick={()=>setEditTpl(null)}>Hủy</button>
               <button className="btn btn-teal" onClick={updateTpl} disabled={saving}>{saving?'⏳':'💾'} Lưu</button>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   LOGIN PAGE
+   ══════════════════════════════════════════════════════════════════ */
+function LoginPage({onLogin, toast}) {
+  const [form, setForm]     = useState({username:'', password:''})
+  const [loading, setLoading] = useState(false)
+  const [showPw, setShowPw]   = useState(false)
+
+  const handleSubmit = async() => {
+    if(!form.username||!form.password) return toast.add('Nhập đủ tên đăng nhập và mật khẩu','error')
+    setLoading(true)
+    try {
+      const res = await axios.post(`${API}/auth/login`, form)
+      onLogin(res.data.user, res.data.access_token)
+    } catch(e) {
+      toast.add(e.response?.data?.detail||'Đăng nhập thất bại','error')
+    }
+    setLoading(false)
+  }
+
+  const handleKey = e => { if(e.key==='Enter') handleSubmit() }
+
+  return (
+    <div style={{
+      minHeight:'100vh', background:'var(--navy)',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      padding:16,
+    }}>
+      <div style={{width:'100%', maxWidth:400}}>
+        {/* Logo */}
+        <div style={{textAlign:'center', marginBottom:32}}>
+          <div style={{
+            width:64, height:64, background:'var(--teal)', borderRadius:16,
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:32, margin:'0 auto 16px',
+          }}>🏥</div>
+          <h1 style={{color:'white', fontSize:22, fontWeight:800, margin:0}}>
+            Bệnh Viện Hồng Đức II
+          </h1>
+          <p style={{color:'rgba(255,255,255,0.5)', fontSize:13, marginTop:4}}>
+            Hệ thống Bảng Kê Chi Phí Ngoại Trú
+          </p>
+        </div>
+
+        {/* Card */}
+        <div style={{
+          background:'white', borderRadius:16, padding:'32px 28px',
+          boxShadow:'0 20px 60px rgba(0,0,0,0.3)',
+        }}>
+          <h2 style={{fontSize:18, fontWeight:700, color:'var(--navy)', marginBottom:24, textAlign:'center'}}>
+            Đăng nhập
+          </h2>
+
+          <div className="form-group">
+            <label className="form-label">Tên đăng nhập</label>
+            <input className="form-input" placeholder="Nhập tên đăng nhập..."
+              value={form.username} onKeyDown={handleKey}
+              onChange={e=>setForm(v=>({...v,username:e.target.value}))}
+              autoFocus/>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Mật khẩu</label>
+            <div style={{position:'relative'}}>
+              <input className="form-input"
+                type={showPw?'text':'password'}
+                placeholder="Nhập mật khẩu..."
+                value={form.password} onKeyDown={handleKey}
+                onChange={e=>setForm(v=>({...v,password:e.target.value}))}
+                style={{paddingRight:40}}/>
+              <button onClick={()=>setShowPw(v=>!v)} style={{
+                position:'absolute', right:10, top:'50%', transform:'translateY(-50%)',
+                background:'none', border:'none', cursor:'pointer', color:'var(--text-light)',
+                fontSize:16,
+              }}>{showPw?'🙈':'👁'}</button>
+            </div>
+          </div>
+
+          <button className="btn btn-teal" style={{width:'100%', padding:'10px', fontSize:14, marginTop:8}}
+            onClick={handleSubmit} disabled={loading}>
+            {loading ? '⏳ Đang đăng nhập...' : '🔐 Đăng nhập'}
+          </button>
+
+          <div style={{textAlign:'center', marginTop:16, fontSize:12, color:'var(--text-light)'}}>
+            Liên hệ quản trị viên nếu quên mật khẩu
+          </div>
+        </div>
+
+        <div style={{textAlign:'center', marginTop:16, fontSize:11, color:'rgba(255,255,255,0.3)'}}>
+          v1.0 · Hồng Đức II © 2026
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   USERS PAGE (Admin)
+   ══════════════════════════════════════════════════════════════════ */
+function UsersPage({toast}) {
+  const [users, setUsers]       = useState([])
+  const [showCreate, setShowCreate] = useState(false)
+  const [editUser, setEditUser]   = useState(null)
+  const [saving, setSaving]       = useState(false)
+  const [newUser, setNewUser] = useState({username:'',password:'',full_name:'',email:'',role:'user'})
+
+  const load = ()=>axios.get(`${API}/users`).then(r=>setUsers(r.data)).catch(e=>toast.add('Lỗi tải danh sách','error'))
+  useEffect(()=>{load()},[])
+
+  const createUser = async()=>{
+    if(!newUser.username||!newUser.password) return toast.add('Nhập đủ tên đăng nhập và mật khẩu','error')
+    setSaving(true)
+    try {
+      await axios.post(`${API}/users`, newUser)
+      toast.add('Đã tạo tài khoản!'); setShowCreate(false)
+      setNewUser({username:'',password:'',full_name:'',email:'',role:'user'}); load()
+    } catch(e){toast.add(e.response?.data?.detail||'Lỗi','error')}
+    setSaving(false)
+  }
+
+  const updateUser = async()=>{
+    setSaving(true)
+    try {
+      await axios.put(`${API}/users/${editUser.id}`, editUser)
+      toast.add('Đã cập nhật!'); setEditUser(null); load()
+    } catch(e){toast.add(e.response?.data?.detail||'Lỗi','error')}
+    setSaving(false)
+  }
+
+  const toggleActive = async(u)=>{
+    try {
+      await axios.put(`${API}/users/${u.id}`, {is_active: !u.is_active})
+      toast.add(u.is_active ? 'Đã khóa tài khoản' : 'Đã mở khóa'); load()
+    } catch(e){toast.add('Lỗi','error')}
+  }
+
+  const deleteUser = async(id, username)=>{
+    if(!confirm(`Xóa tài khoản "${username}"?`)) return
+    try { await axios.delete(`${API}/users/${id}`); toast.add('Đã xóa'); load() }
+    catch(e){toast.add(e.response?.data?.detail||'Lỗi','error')}
+  }
+
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString('vi-VN') : '—'
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-header">
+          <h3>👤 Quản lý người dùng ({users.length})</h3>
+          <button className="btn btn-primary btn-sm" onClick={()=>setShowCreate(true)}>+ Tạo tài khoản</button>
+        </div>
+        <div style={{overflow:'auto'}}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Tên đăng nhập</th><th>Họ tên</th><th>Email</th>
+                <th style={{textAlign:'center'}}>Vai trò</th>
+                <th style={{textAlign:'center'}}>Trạng thái</th>
+                <th>Đăng nhập cuối</th>
+                <th style={{textAlign:'center'}}>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u=>(
+                <tr key={u.id}>
+                  <td><strong>{u.username}</strong></td>
+                  <td>{u.full_name||'—'}</td>
+                  <td className="text-sm text-muted">{u.email||'—'}</td>
+                  <td style={{textAlign:'center'}}>
+                    <span style={{
+                      background: u.role==='admin'?'var(--gold)':'var(--teal)',
+                      color:'white', padding:'2px 8px', borderRadius:10,
+                      fontSize:11, fontWeight:700,
+                    }}>{u.role==='admin'?'👑 Admin':'👤 User'}</span>
+                  </td>
+                  <td style={{textAlign:'center'}}>
+                    <span style={{
+                      background: u.is_active?'rgba(26,122,74,0.1)':'rgba(192,57,43,0.1)',
+                      color: u.is_active?'var(--green)':'var(--red)',
+                      padding:'2px 8px', borderRadius:10, fontSize:11, fontWeight:600,
+                    }}>{u.is_active?'✅ Hoạt động':'🔒 Khóa'}</span>
+                  </td>
+                  <td className="text-sm text-muted">{fmtDate(u.last_login)}</td>
+                  <td>
+                    <div style={{display:'flex',gap:4,justifyContent:'center'}}>
+                      <button className="btn btn-outline btn-xs" onClick={()=>setEditUser({...u,password:''})}>✏</button>
+                      <button className="btn btn-outline btn-xs"
+                        style={{color:u.is_active?'var(--red)':'var(--green)'}}
+                        onClick={()=>toggleActive(u)}>
+                        {u.is_active?'🔒':'🔓'}
+                      </button>
+                      {u.username!=='admin'&&(
+                        <button className="btn btn-danger btn-xs" onClick={()=>deleteUser(u.id,u.username)}>🗑</button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Create modal */}
+      {showCreate&&(
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>➕ Tạo tài khoản mới</h3>
+              <button className="btn btn-outline btn-xs" onClick={()=>setShowCreate(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                {[
+                  {key:'username',  label:'Tên đăng nhập (*)', placeholder:'vd: nguyen.thi.lan'},
+                  {key:'password',  label:'Mật khẩu (*)',       placeholder:'Tối thiểu 6 ký tự', type:'password'},
+                  {key:'full_name', label:'Họ và tên',          placeholder:'Nguyễn Thị Lan'},
+                  {key:'email',     label:'Email',              placeholder:'lan@hongduc2.vn'},
+                ].map(({key,label,placeholder,type})=>(
+                  <div key={key} className="form-group" style={{marginBottom:0}}>
+                    <label className="form-label">{label}</label>
+                    <input className="form-input" type={type||'text'} placeholder={placeholder}
+                      value={newUser[key]} onChange={e=>setNewUser(v=>({...v,[key]:e.target.value}))}/>
+                  </div>
+                ))}
+                <div className="form-group" style={{marginBottom:0,gridColumn:'1/-1'}}>
+                  <label className="form-label">Vai trò</label>
+                  <select className="form-input form-select" value={newUser.role}
+                    onChange={e=>setNewUser(v=>({...v,role:e.target.value}))}>
+                    <option value="user">👤 User — Sử dụng hệ thống</option>
+                    <option value="admin">👑 Admin — Toàn quyền</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={()=>setShowCreate(false)}>Hủy</button>
+              <button className="btn btn-teal" onClick={createUser} disabled={saving}>{saving?'⏳':'+'} Tạo</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editUser&&(
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>✏ Sửa tài khoản — <span style={{color:'var(--teal)'}}>{editUser.username}</span></h3>
+              <button className="btn btn-outline btn-xs" onClick={()=>setEditUser(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                {[
+                  {key:'full_name', label:'Họ và tên', placeholder:''},
+                  {key:'email',     label:'Email',     placeholder:''},
+                  {key:'password',  label:'Mật khẩu mới', placeholder:'Để trống = giữ nguyên', type:'password'},
+                ].map(({key,label,placeholder,type})=>(
+                  <div key={key} className="form-group" style={{marginBottom:0}}>
+                    <label className="form-label">{label}</label>
+                    <input className="form-input" type={type||'text'} placeholder={placeholder}
+                      value={editUser[key]||''} onChange={e=>setEditUser(v=>({...v,[key]:e.target.value}))}/>
+                  </div>
+                ))}
+                <div className="form-group" style={{marginBottom:0}}>
+                  <label className="form-label">Vai trò</label>
+                  <select className="form-input form-select" value={editUser.role}
+                    onChange={e=>setEditUser(v=>({...v,role:e.target.value}))}>
+                    <option value="user">👤 User</option>
+                    <option value="admin">👑 Admin</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={()=>setEditUser(null)}>Hủy</button>
+              <button className="btn btn-teal" onClick={updateUser} disabled={saving}>{saving?'⏳':'💾'} Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   LOGS PAGE (Admin)
+   ══════════════════════════════════════════════════════════════════ */
+function LogsPage({toast}) {
+  const [logs, setLogs]       = useState([])
+  const [stats, setStats]     = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage]       = useState(1)
+  const [total, setTotal]     = useState(0)
+  const [pages, setPages]     = useState(1)
+  const [filters, setFilters] = useState({username:'', action:'', resource:'', date_from:'', date_to:''})
+  const [tab, setTab]         = useState('logs') // logs | stats
+  const LIMIT = 50
+
+  const loadLogs = async(pg=1, f=filters)=>{
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({page:pg, limit:LIMIT})
+      if(f.username)  params.append('username',  f.username)
+      if(f.action)    params.append('action',    f.action)
+      if(f.resource)  params.append('resource',  f.resource)
+      if(f.date_from) params.append('date_from', f.date_from)
+      if(f.date_to)   params.append('date_to',   f.date_to)
+      const res = await axios.get(`${API}/logs?${params}`)
+      setLogs(res.data.logs); setTotal(res.data.total)
+      setPages(res.data.pages); setPage(pg)
+    } catch(e){toast.add('Lỗi tải log','error')}
+    setLoading(false)
+  }
+
+  const loadStats = async()=>{
+    try { const res = await axios.get(`${API}/logs/stats`); setStats(res.data) }
+    catch(e){}
+  }
+
+  useEffect(()=>{ loadLogs(); loadStats() },[])
+
+  const clearLogs = async()=>{
+    if(!confirm('Xóa log cũ hơn 30 ngày?')) return
+    try {
+      const res = await axios.delete(`${API}/logs/clear?days=30`)
+      toast.add(`Đã xóa ${res.data.deleted} bản ghi log`); loadLogs(); loadStats()
+    } catch(e){toast.add('Lỗi','error')}
+  }
+
+  const ACTION_COLORS = {
+    LOGIN:'#1a7a4a', LOGOUT:'#8896A9', LOGIN_FAILED:'#c0392b',
+    CREATE_BILL:'#0b8a8a', DELETE_BILL:'#c0392b', EXPORT_BILL:'#c9a84c',
+    CREATE_PATIENT:'#0b8a8a', DELETE_PATIENT:'#c0392b',
+    CREATE_SERVICE:'#0b8a8a', DELETE_SERVICE:'#c0392b',
+    IMPORT_EXCEL:'#c9a84c', EXPORT_BULK:'#c9a84c',
+    CREATE_USER:'#0b8a8a', DELETE_USER:'#c0392b', UPDATE_USER:'#c9a84c',
+    CHANGE_PASSWORD:'#c9a84c', CLEAR_LOGS:'#c0392b',
+  }
+
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString('vi-VN') : '—'
+
+  const uniqueActions = [...new Set(logs.map(l=>l.action))]
+
+  return (
+    <div>
+      {/* Stats summary */}
+      {stats&&(
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,marginBottom:16}}>
+          {[
+            {label:'Tổng log',       val:stats.total_logs,   color:'var(--navy)'},
+            {label:'Tổng người dùng', val:stats.total_users,  color:'var(--teal)'},
+            {label:'Đang hoạt động',  val:stats.active_users, color:'var(--green)'},
+          ].map(({label,val,color})=>(
+            <div key={label} className="stat-card" style={{borderTop:`3px solid ${color}`}}>
+              <div className="stat-label">{label}</div>
+              <div className="stat-value" style={{color, fontSize:24}}>{val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'1px solid var(--border)'}}>
+        {[{id:'logs',label:'📜 Nhật ký'},{id:'stats',label:'📊 Thống kê'}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',
+            border:'none',background:'transparent',fontFamily:'Be Vietnam Pro,sans-serif',
+            borderBottom:tab===t.id?'2px solid var(--teal)':'2px solid transparent',
+            color:tab===t.id?'var(--teal)':'var(--text-light)',
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {tab==='logs'&&(
+        <div className="card">
+          <div className="card-header" style={{flexWrap:'wrap',gap:8}}>
+            <h3>📜 Nhật ký ({total})</h3>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+              <input className="form-input" placeholder="Tên user..." style={{width:120}}
+                value={filters.username} onChange={e=>setFilters(v=>({...v,username:e.target.value}))}/>
+              <select className="form-input form-select" style={{width:160}}
+                value={filters.action} onChange={e=>setFilters(v=>({...v,action:e.target.value}))}>
+                <option value="">Tất cả hành động</option>
+                {['LOGIN','LOGOUT','LOGIN_FAILED','CREATE_BILL','DELETE_BILL','EXPORT_BILL',
+                  'CREATE_PATIENT','DELETE_PATIENT','CREATE_SERVICE','IMPORT_EXCEL',
+                  'CREATE_USER','DELETE_USER','CHANGE_PASSWORD'].map(a=>(
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+              <input type="date" className="form-input" style={{width:140}}
+                value={filters.date_from} onChange={e=>setFilters(v=>({...v,date_from:e.target.value}))}/>
+              <input type="date" className="form-input" style={{width:140}}
+                value={filters.date_to} onChange={e=>setFilters(v=>({...v,date_to:e.target.value}))}/>
+              <button className="btn btn-teal btn-sm" onClick={()=>loadLogs(1)}>🔍 Lọc</button>
+              <button className="btn btn-outline btn-sm" onClick={()=>{
+                setFilters({username:'',action:'',resource:'',date_from:'',date_to:''})
+                loadLogs(1, {username:'',action:'',resource:'',date_from:'',date_to:''})
+              }}>↺ Reset</button>
+              <button className="btn btn-danger btn-sm" onClick={clearLogs}>🗑 Xóa cũ</button>
+            </div>
+          </div>
+
+          <div style={{overflow:'auto'}}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Thời gian</th><th>Người dùng</th><th>Hành động</th>
+                  <th>Resource</th><th>Chi tiết</th><th>IP</th><th style={{textAlign:'center'}}>Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading&&<tr><td colSpan={7} style={{textAlign:'center',padding:32}}>⏳</td></tr>}
+                {!loading&&logs.map(l=>(
+                  <tr key={l.id}>
+                    <td style={{fontSize:11,whiteSpace:'nowrap',color:'var(--text-light)'}}>{fmtDate(l.created_at)}</td>
+                    <td><strong style={{fontSize:12}}>{l.username}</strong></td>
+                    <td>
+                      <span style={{
+                        fontSize:11, fontWeight:700, padding:'2px 7px', borderRadius:10,
+                        background:(ACTION_COLORS[l.action]||'#8896A9')+'22',
+                        color:ACTION_COLORS[l.action]||'#8896A9',
+                      }}>{l.action}</span>
+                    </td>
+                    <td style={{fontSize:11,color:'var(--text-light)'}}>{l.resource||'—'}{l.resource_id?` #${l.resource_id}`:''}</td>
+                    <td style={{fontSize:11,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.detail}>{l.detail||'—'}</td>
+                    <td style={{fontSize:11,color:'var(--text-light)'}}>{l.ip_address||'—'}</td>
+                    <td style={{textAlign:'center'}}>
+                      <span style={{
+                        fontSize:10, padding:'1px 6px', borderRadius:8,
+                        background:l.status==='success'?'rgba(26,122,74,0.1)':'rgba(192,57,43,0.1)',
+                        color:l.status==='success'?'var(--green)':'var(--red)',
+                      }}>{l.status==='success'?'✓':'✗'}</span>
+                    </td>
+                  </tr>
+                ))}
+                {!loading&&logs.length===0&&<tr><td colSpan={7} style={{textAlign:'center',padding:32,color:'var(--text-light)'}}>Không có log nào</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {pages>1&&(
+            <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap'}}>
+              <button className="btn btn-outline btn-xs" disabled={page<=1} onClick={()=>loadLogs(page-1)}>‹ Trước</button>
+              {Array.from({length:Math.min(pages,10)},(_,i)=>i+1).map(p=>(
+                <button key={p} className={`btn btn-xs ${p===page?'btn-teal':'btn-outline'}`}
+                  onClick={()=>loadLogs(p)}>{p}</button>
+              ))}
+              <button className="btn btn-outline btn-xs" disabled={page>=pages} onClick={()=>loadLogs(page+1)}>Sau ›</button>
+              <span style={{fontSize:11,color:'var(--text-light)',alignSelf:'center'}}>Tổng {total} bản ghi</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab==='stats'&&stats&&(
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {/* Top actions */}
+          <div className="card">
+            <div className="card-header"><h3>🎯 Top hành động</h3></div>
+            <div>
+              {stats.top_actions.map(a=>(
+                <div key={a.action} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 16px',borderBottom:'1px solid var(--cream-dark)'}}>
+                  <span style={{
+                    fontSize:11,fontWeight:700,padding:'2px 7px',borderRadius:10,
+                    background:(ACTION_COLORS[a.action]||'#8896A9')+'22',
+                    color:ACTION_COLORS[a.action]||'#8896A9',flexShrink:0,
+                  }}>{a.action}</span>
+                  <div style={{flex:1,background:'var(--cream)',borderRadius:4,height:6}}>
+                    <div style={{
+                      width:`${(a.count/stats.top_actions[0].count)*100}%`,
+                      height:'100%',background:'var(--teal)',borderRadius:4
+                    }}/>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--navy)',minWidth:30,textAlign:'right'}}>{a.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Top users */}
+          <div className="card">
+            <div className="card-header"><h3>👤 Người dùng tích cực</h3></div>
+            <div>
+              {stats.top_users.map(u=>(
+                <div key={u.username} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 16px',borderBottom:'1px solid var(--cream-dark)'}}>
+                  <div style={{
+                    width:28,height:28,borderRadius:'50%',background:'var(--teal)',
+                    color:'white',display:'flex',alignItems:'center',justifyContent:'center',
+                    fontSize:11,fontWeight:700,flexShrink:0
+                  }}>{u.username[0].toUpperCase()}</div>
+                  <span style={{flex:1,fontSize:13,fontWeight:600}}>{u.username}</span>
+                  <div style={{flex:1,background:'var(--cream)',borderRadius:4,height:6}}>
+                    <div style={{
+                      width:`${(u.count/stats.top_users[0].count)*100}%`,
+                      height:'100%',background:'var(--navy)',borderRadius:4
+                    }}/>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--navy)',minWidth:30,textAlign:'right'}}>{u.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recent logins */}
+          <div className="card" style={{gridColumn:'1/-1'}}>
+            <div className="card-header"><h3>🔐 Đăng nhập gần đây</h3></div>
+            <table className="data-table">
+              <thead><tr><th>Người dùng</th><th>IP</th><th>Thời gian</th></tr></thead>
+              <tbody>
+                {stats.recent_logins.map((l,i)=>(
+                  <tr key={i}>
+                    <td><strong>{l.username}</strong></td>
+                    <td style={{fontSize:12,color:'var(--text-light)'}}>{l.ip_address||'—'}</td>
+                    <td style={{fontSize:12,color:'var(--text-light)'}}>{fmtDate(l.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

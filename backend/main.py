@@ -1683,3 +1683,353 @@ def export_pdf_v2(bill_id: int, template_id: str = None,
         return FileResponse(out, media_type="application/pdf", filename=fname)
     except Exception as e:
         os.unlink(out); raise HTTPException(500, str(e))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTH & USER MANAGEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+from jose import JWTError, jwt as _jwt
+from passlib.context import CryptContext
+from fastapi import Request, Cookie
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from models import User, ActivityLog
+from datetime import timedelta
+
+SECRET_KEY = os.getenv("JWT_SECRET", "hongduc2-super-secret-key-2026")
+ALGORITHM  = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 giờ
+
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def verify_password(plain, hashed): return pwd_ctx.verify(plain, hashed)
+def hash_password(pw): return pwd_ctx.hash(pw)
+
+def create_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode["exp"] = expire
+    return _jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_token_from_request(request: Request) -> Optional[str]:
+    """Lấy token từ header Authorization hoặc cookie."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return request.cookies.get("access_token")
+
+def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
+    token = get_token_from_request(request)
+    if not token: return None
+    try:
+        payload = _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username: return None
+        return db.query(User).filter(User.username == username, User.is_active == True).first()
+    except JWTError:
+        return None
+
+def require_user(request: Request, db: Session = Depends(get_db)) -> User:
+    user = get_current_user_optional(request, db)
+    if not user: raise HTTPException(401, "Chưa đăng nhập")
+    return user
+
+def require_admin(request: Request, db: Session = Depends(get_db)) -> User:
+    user = require_user(request, db)
+    if user.role != "admin": raise HTTPException(403, "Chỉ admin mới có quyền này")
+    return user
+
+def log_activity(db: Session, user: Optional[User], action: str,
+                 resource: str = None, resource_id: str = None,
+                 detail: str = None, request: Request = None,
+                 status: str = "success"):
+    ip = ua = None
+    if request:
+        ip = request.client.host if request.client else None
+        ua = request.headers.get("user-agent", "")[:300]
+    entry = ActivityLog(
+        user_id=user.id if user else None,
+        username=user.username if user else "anonymous",
+        action=action, resource=resource, resource_id=str(resource_id) if resource_id else None,
+        detail=detail, ip_address=ip, user_agent=ua, status=status,
+    )
+    db.add(entry); db.commit()
+
+# ── Auth Schemas ──────────────────────────────────────────────────────────────
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: str = "user"
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+# ── Auth Endpoints ────────────────────────────────────────────────────────────
+@app.post("/api/auth/login")
+async def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == body.username).first()
+    if not user or not verify_password(body.password, user.hashed_pw):
+        log_activity(db, None, "LOGIN_FAILED", detail=f"username={body.username}", request=request, status="error")
+        raise HTTPException(401, "Sai tên đăng nhập hoặc mật khẩu")
+    if not user.is_active:
+        raise HTTPException(403, "Tài khoản đã bị khóa")
+
+    token = create_token({"sub": user.username, "role": user.role})
+    user.last_login = datetime.utcnow()
+    db.commit()
+
+    log_activity(db, user, "LOGIN", detail="Đăng nhập thành công", request=request)
+    return {
+        "access_token": token, "token_type": "bearer",
+        "user": {"id": user.id, "username": user.username,
+                 "full_name": user.full_name, "role": user.role, "email": user.email}
+    }
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user_optional(request, db)
+    if user:
+        log_activity(db, user, "LOGOUT", request=request)
+    return {"ok": True}
+
+@app.get("/api/auth/me")
+async def get_me(request: Request, db: Session = Depends(get_db)):
+    user = require_user(request, db)
+    return {"id": user.id, "username": user.username,
+            "full_name": user.full_name, "role": user.role,
+            "email": user.email, "created_at": user.created_at.isoformat(),
+            "last_login": user.last_login.isoformat() if user.last_login else None}
+
+@app.put("/api/auth/change-password")
+async def change_password(body: dict, request: Request, db: Session = Depends(get_db)):
+    user = require_user(request, db)
+    old_pw = body.get("old_password", "")
+    new_pw = body.get("new_password", "")
+    if not verify_password(old_pw, user.hashed_pw):
+        raise HTTPException(400, "Mật khẩu cũ không đúng")
+    if len(new_pw) < 6:
+        raise HTTPException(400, "Mật khẩu mới phải ít nhất 6 ký tự")
+    user.hashed_pw = hash_password(new_pw)
+    db.commit()
+    log_activity(db, user, "CHANGE_PASSWORD", request=request)
+    return {"ok": True}
+
+# ── User Management (Admin) ───────────────────────────────────────────────────
+@app.get("/api/users")
+async def list_users(request: Request, db: Session = Depends(get_db)):
+    require_admin(request, db)
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [{
+        "id": u.id, "username": u.username, "email": u.email,
+        "full_name": u.full_name, "role": u.role, "is_active": u.is_active,
+        "created_at": u.created_at.isoformat(),
+        "last_login": u.last_login.isoformat() if u.last_login else None,
+    } for u in users]
+
+@app.post("/api/users")
+async def create_user(body: UserCreate, request: Request, db: Session = Depends(get_db)):
+    admin = require_admin(request, db)
+    if db.query(User).filter(User.username == body.username).first():
+        raise HTTPException(400, f"Username '{body.username}' đã tồn tại")
+    user = User(
+        username=body.username, email=body.email, full_name=body.full_name,
+        hashed_pw=hash_password(body.password), role=body.role,
+    )
+    db.add(user); db.commit(); db.refresh(user)
+    log_activity(db, admin, "CREATE_USER", resource="users", resource_id=user.id,
+                 detail=f"Tạo user {user.username}", request=request)
+    return {"id": user.id, "username": user.username, "role": user.role}
+
+@app.put("/api/users/{user_id}")
+async def update_user(user_id: int, body: UserUpdate, request: Request, db: Session = Depends(get_db)):
+    admin = require_admin(request, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user: raise HTTPException(404, "Không tìm thấy user")
+    if body.email      is not None: user.email     = body.email
+    if body.full_name  is not None: user.full_name  = body.full_name
+    if body.role       is not None: user.role       = body.role
+    if body.is_active  is not None: user.is_active  = body.is_active
+    if body.password:               user.hashed_pw  = hash_password(body.password)
+    db.commit()
+    log_activity(db, admin, "UPDATE_USER", resource="users", resource_id=user_id,
+                 detail=f"Cập nhật user {user.username}", request=request)
+    return {"ok": True}
+
+@app.delete("/api/users/{user_id}")
+async def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
+    admin = require_admin(request, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user: raise HTTPException(404)
+    if user.username == "admin": raise HTTPException(400, "Không thể xóa admin chính")
+    username = user.username
+    db.delete(user); db.commit()
+    log_activity(db, admin, "DELETE_USER", resource="users", resource_id=user_id,
+                 detail=f"Xóa user {username}", request=request)
+    return {"ok": True}
+
+# ── Activity Logs (Admin) ─────────────────────────────────────────────────────
+@app.get("/api/logs")
+async def get_logs(
+    request: Request, db: Session = Depends(get_db),
+    page: int = 1, limit: int = 50,
+    username: str = None, action: str = None, resource: str = None,
+    date_from: str = None, date_to: str = None,
+):
+    require_admin(request, db)
+    q = db.query(ActivityLog).order_by(ActivityLog.created_at.desc())
+    if username: q = q.filter(ActivityLog.username.ilike(f"%{username}%"))
+    if action:   q = q.filter(ActivityLog.action == action)
+    if resource: q = q.filter(ActivityLog.resource == resource)
+    if date_from:
+        try:
+            from datetime import datetime as dt
+            q = q.filter(ActivityLog.created_at >= dt.strptime(date_from, "%Y-%m-%d"))
+        except: pass
+    if date_to:
+        try:
+            from datetime import datetime as dt
+            q = q.filter(ActivityLog.created_at <= dt.strptime(date_to + " 23:59:59", "%Y-%m-%d %H:%M:%S"))
+        except: pass
+
+    total = q.count()
+    logs  = q.offset((page-1)*limit).limit(limit).all()
+    return {
+        "total": total, "page": page, "limit": limit,
+        "pages": (total + limit - 1) // limit,
+        "logs": [{
+            "id": l.id, "username": l.username, "action": l.action,
+            "resource": l.resource, "resource_id": l.resource_id,
+            "detail": l.detail, "ip_address": l.ip_address,
+            "status": l.status,
+            "created_at": l.created_at.isoformat(),
+        } for l in logs]
+    }
+
+@app.get("/api/logs/stats")
+async def get_log_stats(request: Request, db: Session = Depends(get_db)):
+    require_admin(request, db)
+    from sqlalchemy import func
+    # Top actions
+    top_actions = db.query(
+        ActivityLog.action,
+        func.count(ActivityLog.id).label("count")
+    ).group_by(ActivityLog.action).order_by(func.count(ActivityLog.id).desc()).limit(10).all()
+
+    # Top users
+    top_users = db.query(
+        ActivityLog.username,
+        func.count(ActivityLog.id).label("count")
+    ).group_by(ActivityLog.username).order_by(func.count(ActivityLog.id).desc()).limit(10).all()
+
+    # Recent logins
+    recent_logins = db.query(ActivityLog).filter(
+        ActivityLog.action == "LOGIN"
+    ).order_by(ActivityLog.created_at.desc()).limit(10).all()
+
+    total_logs   = db.query(ActivityLog).count()
+    total_users  = db.query(User).count()
+    active_users = db.query(User).filter(User.is_active == True).count()
+
+    return {
+        "total_logs": total_logs, "total_users": total_users,
+        "active_users": active_users,
+        "top_actions": [{"action": a.action, "count": a.count} for a in top_actions],
+        "top_users":   [{"username": u.username, "count": u.count} for u in top_users],
+        "recent_logins": [{
+            "username": l.username, "ip_address": l.ip_address,
+            "created_at": l.created_at.isoformat()
+        } for l in recent_logins],
+    }
+
+@app.delete("/api/logs/clear")
+async def clear_old_logs(days: int = 30, request: Request = None, db: Session = Depends(get_db)):
+    admin = require_admin(request, db)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    deleted = db.query(ActivityLog).filter(ActivityLog.created_at < cutoff).delete()
+    db.commit()
+    log_activity(db, admin, "CLEAR_LOGS", detail=f"Xóa log cũ hơn {days} ngày ({deleted} bản ghi)", request=request)
+    return {"deleted": deleted}
+
+# ── Middleware ghi log tự động ────────────────────────────────────────────────
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+
+# Map method+path → action name
+LOG_MAP = {
+    ("POST",   "/api/bills"):            ("CREATE_BILL",   "bills"),
+    ("DELETE", "/api/bills/"):           ("DELETE_BILL",   "bills"),
+    ("POST",   "/api/bills/export-bulk"):("EXPORT_BULK",   "bills"),
+    ("POST",   "/api/patients"):         ("CREATE_PATIENT","patients"),
+    ("PUT",    "/api/patients/"):        ("UPDATE_PATIENT","patients"),
+    ("DELETE", "/api/patients/"):        ("DELETE_PATIENT","patients"),
+    ("POST",   "/api/services"):         ("CREATE_SERVICE","services"),
+    ("PUT",    "/api/services/"):        ("UPDATE_SERVICE","services"),
+    ("DELETE", "/api/services/"):        ("DELETE_SERVICE","services"),
+    ("POST",   "/api/service-groups"):   ("CREATE_GROUP",  "service_groups"),
+    ("DELETE", "/api/service-groups/"):  ("DELETE_GROUP",  "service_groups"),
+    ("POST",   "/api/packages"):         ("CREATE_PACKAGE","packages"),
+    ("DELETE", "/api/packages/"):        ("DELETE_PACKAGE","packages"),
+    ("POST",   "/api/upload-excel"):     ("IMPORT_EXCEL",  "bills"),
+    ("GET",    "/api/bills/"):           ("EXPORT_BILL",   "bills"),
+    ("POST",   "/api/templates/upload"): ("UPLOAD_TEMPLATE","templates"),
+    ("DELETE", "/api/templates/"):       ("DELETE_TEMPLATE","templates"),
+}
+
+class ActivityLogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response = await call_next(request)
+
+        # Chỉ log các API write operations
+        method = request.method
+        path   = request.url.path
+
+        if not path.startswith("/api/") or path.startswith("/api/auth/") or path.startswith("/api/logs"):
+            return response
+        if method not in ("POST", "PUT", "DELETE", "PATCH"):
+            return response
+        if response.status_code >= 400:
+            return response
+
+        # Tìm action phù hợp
+        action = resource = None
+        for (m, p), (a, r) in LOG_MAP.items():
+            if method == m and path.startswith(p):
+                action, resource = a, r
+                break
+
+        if action:
+            try:
+                from database import SessionLocal as _SL
+                db2 = _SL()
+                token = get_token_from_request(request)
+                user = None
+                if token:
+                    try:
+                        payload = _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                        uname = payload.get("sub")
+                        if uname:
+                            user = db2.query(User).filter(User.username == uname).first()
+                    except: pass
+                # Extract resource_id from path
+                parts = path.rstrip('/').split('/')
+                rid = parts[-1] if parts[-1].isdigit() else None
+                log_activity(db2, user, action, resource=resource, resource_id=rid,
+                             detail=f"{method} {path}", request=request)
+                db2.close()
+            except: pass
+
+        return response
+
+app.add_middleware(ActivityLogMiddleware)
